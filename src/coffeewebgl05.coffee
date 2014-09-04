@@ -5,16 +5,16 @@ class CanvasRenderer
 	getVertexShaderSource: =>
 		"
 		attribute vec3 aVertexPosition;
-		attribute vec4 aVertexColor;
+		attribute vec2 aTextureCoord;
 
 		uniform mat4 uMVMatrix;
 		uniform mat4 uPMatrix;
 
-		varying vec4 vColor;
+		varying vec2 vTextureCoord;
 		
 		void main(void) {
 			gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
-			vColor = aVertexColor;
+			vTextureCoord = aTextureCoord;
 		}
 		"
 
@@ -22,10 +22,12 @@ class CanvasRenderer
 		"
 		precision mediump float;
 
-		varying vec4 vColor;
+		varying vec2 vTextureCoord;
+
+		uniform sampler2D uSampler;
 
 		void main(void) {
-			gl_FragColor = vColor;
+			gl_FragColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
 		}
 		"
 
@@ -69,11 +71,12 @@ class CanvasRenderer
 		@shaderProgram.vertexPositionAttribute = @gl.getAttribLocation @shaderProgram, "aVertexPosition"
 		@gl.enableVertexAttribArray @shaderProgram.vertexPositionAttribute
 
-		@shaderProgram.vertexColorAttribute = @gl.getAttribLocation @shaderProgram, "aVertexColor"
-		@gl.enableVertexAttribArray @shaderProgram.vertexColorAttribute
+		@shaderProgram.textureCoordAttribute = @gl.getAttribLocation @shaderProgram, "aTextureCoord"
+		@gl.enableVertexAttribArray @shaderProgram.textureCoordAttribute
 
 		@shaderProgram.pMatrixUniform = @gl.getUniformLocation @shaderProgram, "uPMatrix"
 		@shaderProgram.mvMatrixUniform = @gl.getUniformLocation @shaderProgram, "uMVMatrix"
+		@shaderProgram.samplerUniform = @gl.getUniformLocation @shaderProgram, "uSampler"
 
 		true
 
@@ -82,19 +85,19 @@ class CanvasRenderer
 		@gl.uniformMatrix4fv @shaderProgram.mvMatrixUniform, false, @mvMatrix
 
 	constructor: ->
-		@pyramidVertexPositionBuffer = null
-		@pyramidVertexColorBuffer = null
 		@cubeVertexPositionBuffer = null
-		@cubeVertexColorBuffer = null
 		@cubeVertexIndexBuffer = null
+		@cubeVertexTextureCoordBuffer = null
 		@mvMatrix = mat4.create()
 		@pMatrix = mat4.create()
 		@gl = null
 		@shaderProgram = null
-		@rPyramid = 0
-		@rCube = 0
+		@xRot = 0
+		@yRot = 0
+		@zRot = 0
 		@lastTime = 0
 		@mvMatrixStack = []
+		@texture = null
 	
 	logGLCall: (call, args) =>
 		console.log "gl."+call+" "+ WebGLDebugUtils.glFunctionArgsToString(call, args)
@@ -122,56 +125,6 @@ class CanvasRenderer
 			gl
 
 	initBuffers: =>
-		@pyramidVertexPositionBuffer = @gl.createBuffer()
-		
-		vertices = [
-			 0.0,  1.0,  0.0,
-		    -1.0, -1.0,  1.0,
-			 1.0, -1.0,  1.0,
-
-			 0.0,  1.0,  0.0,
-			 1.0, -1.0,  1.0,
-			 1.0, -1.0, -1.0,
-
-			 0.0,  1.0,  0.0,
-			 1.0, -1.0, -1.0,
-			-1.0, -1.0, -1.0,
-
-			 0.0,  1.0,  0.0,
-			-1.0, -1.0, -1.0,
-			-1.0, -1.0,  1.0
-		]
-		
-		@gl.bindBuffer @gl.ARRAY_BUFFER, @pyramidVertexPositionBuffer
-		@gl.bufferData @gl.ARRAY_BUFFER, new Float32Array(vertices), @gl.STATIC_DRAW 
-		@pyramidVertexPositionBuffer.itemSize = 3
-		@pyramidVertexPositionBuffer.numItems = 12
-
-		@pyramidVertexColorBuffer = @gl.createBuffer()
-
-		colors = [
-			1.0, 0.0, 0.0, 1.0,
-			0.0, 1.0, 0.0, 1.0,
-			0.0, 0.0, 1.0, 1.0,
-
-			1.0, 0.0, 0.0, 1.0,
-			0.0, 0.0, 1.0, 1.0,
-			0.0, 1.0, 0.0, 1.0,
-
-			1.0, 0.0, 0.0, 1.0,
-			0.0, 1.0, 0.0, 1.0,
-			0.0, 0.0, 1.0, 1.0, 
-
-			1.0, 0.0, 0.0, 1.0,
-			0.0, 0.0, 1.0, 1.0,
-			0.0, 1.0, 0.0, 1.0
-		]
-
-		@gl.bindBuffer @gl.ARRAY_BUFFER, @pyramidVertexColorBuffer
-		@gl.bufferData @gl.ARRAY_BUFFER, new Float32Array(colors), @gl.STATIC_DRAW
-		@pyramidVertexColorBuffer.itemSize = 4
-		@pyramidVertexColorBuffer.numItems = 12
-
 		@cubeVertexPositionBuffer = @gl.createBuffer()
 
 		vertices = [
@@ -212,25 +165,50 @@ class CanvasRenderer
 		@cubeVertexPositionBuffer.itemSize = 3
 		@cubeVertexPositionBuffer.numItems = 24
 
-		@cubeVertexColorBuffer = @gl.createBuffer()
+		@cubeVertexTextureCoordBuffer = @gl.createBuffer()
+		@gl.bindBuffer @gl.ARRAY_BUFFER, @cubeVertexTextureCoordBuffer
 
-		
-		colors = [
-			[1.0, 0.0, 0.0, 1.0],     # Front face
-			[1.0, 1.0, 0.0, 1.0],     # Back face
-			[0.0, 1.0, 0.0, 1.0],     # Top face
-			[1.0, 0.5, 0.5, 1.0],     # Bottom face
-			[1.0, 0.0, 1.0, 1.0],     # Right face
-			[0.0, 0.0, 1.0, 1.0],     # Left face
-		];
+		textureCoords = [
+			# Front face
+			0.0, 0.0,
+			1.0, 0.0,
+			1.0, 1.0,
+			0.0, 1.0,
 
-		unpackedColors = []
-		(((unpackedColors.push val for val in x) for _ in [1..4]) for x in colors)
-		
-		@gl.bindBuffer @gl.ARRAY_BUFFER, @cubeVertexColorBuffer
-		@gl.bufferData @gl.ARRAY_BUFFER, new Float32Array(unpackedColors), @gl.STATIC_DRAW
-		@cubeVertexColorBuffer.itemSize = 4
-		@cubeVertexColorBuffer.numItems = 24
+			# Back face
+			1.0, 0.0,
+			1.0, 1.0,
+			0.0, 1.0,
+			0.0, 0.0,
+
+			# Top face
+			0.0, 1.0,
+			0.0, 0.0,
+			1.0, 0.0,
+			1.0, 1.0,
+
+			# Bottom face
+			1.0, 1.0,
+			0.0, 1.0,
+			0.0, 0.0,
+			1.0, 0.0,
+
+			# Right face
+			1.0, 0.0,
+			1.0, 1.0,
+			0.0, 1.0,
+			0.0, 0.0,
+
+			# Left face
+			0.0, 0.0,
+			1.0, 0.0,
+			1.0, 1.0,
+			0.0, 1.0
+		]
+
+		@gl.bufferData @gl.ARRAY_BUFFER, new Float32Array(textureCoords), @gl.STATIC_DRAW
+		@cubeVertexTextureCoordBuffer.itemSize = 2
+		@cubeVertexTextureCoordBuffer.numItems = 24
 
 		@cubeVertexIndexBuffer = @gl.createBuffer()
 		@gl.bindBuffer @gl.ELEMENT_ARRAY_BUFFER, @cubeVertexIndexBuffer
@@ -264,11 +242,31 @@ class CanvasRenderer
 		if !@initShaders()
 			return
 		@initBuffers()
+		@initTexture()
 
+		
+
+	startRender: =>
 		@gl.clearColor 0.0, 0.0, 0.0, 1.0
 		@gl.enable @gl.DEPTH_TEST
 
-		@tick()
+		@tick()		
+
+	initTexture: =>
+		@texture = @gl.createTexture()
+		@texture.image = new Image()
+		@texture.image.onload = => @handleLoadedTexture @texture
+		@texture.image.src = "img/woodtexture512.jpg"
+
+	handleLoadedTexture: (texture) =>
+		@gl.bindTexture @gl.TEXTURE_2D, texture
+		@gl.pixelStorei @gl.UNPACK_FLIP_Y_WEBGL, true
+		@gl.texImage2D @gl.TEXTURE_2D, 0, @gl.RGBA, @gl.RGBA, @gl.UNSIGNED_BYTE, texture.image
+		@gl.texParameteri @gl.TEXTURE_2D, @gl.TEXTURE_MAG_FILTER, @gl.NEAREST
+		@gl.texParameteri @gl.TEXTURE_2D, @gl.TEXTURE_MIN_FILTER, @gl.NEAREST
+		@gl.bindTexture @gl.TEXTURE_2D, null
+		
+		@startRender()
 
 	tick: =>
 		requestAnimFrame @tick
@@ -279,9 +277,10 @@ class CanvasRenderer
 		timeNow = new Date().getTime()
 		if @lastTime != 0
 			elapsed = timeNow-@lastTime
-
-			@rPyramid += (90 * elapsed) / 1000.0
-			@rCube += (75 * elapsed) / 1000.0
+			
+			@xRot += (90 * elapsed) / 1000.0
+			@yRot += (90 * elapsed) / 1000.0
+			@zRot += (90 * elapsed) / 1000.0
 		@lastTime = timeNow
 
 	mvPushMatrix: =>
@@ -304,39 +303,24 @@ class CanvasRenderer
 		
 		mat4.identity @mvMatrix
 
-		mat4.translate @mvMatrix, [-1.5, 0.0, -7.0]
-
-		@mvPushMatrix()
+		mat4.translate @mvMatrix, [0, 0.0, -5.0]
 		
-		mat4.rotate @mvMatrix, @degToRad(@rPyramid), [0,1,0]
-		
-		@gl.bindBuffer @gl.ARRAY_BUFFER, @pyramidVertexPositionBuffer
-		@gl.vertexAttribPointer @shaderProgram.vertexPositionAttribute, @pyramidVertexPositionBuffer.itemSize, @gl.FLOAT, false, 0, 0
-		
-		@gl.bindBuffer @gl.ARRAY_BUFFER, @pyramidVertexColorBuffer
-		@gl.vertexAttribPointer @shaderProgram.vertexColorAttribute, @pyramidVertexColorBuffer.itemSize, @gl.FLOAT, false, 0, 0
-		
-		@setMatrixUniforms()
-		@gl.drawArrays @gl.TRIANGLES, 0, @pyramidVertexPositionBuffer.numItems
-
-		@mvPopMatrix()
-
-		mat4.translate @mvMatrix, [3.0, 0.0, 0.0]
-		
-		@mvPushMatrix()
-		
-		mat4.rotate @mvMatrix, @degToRad(@rCube), [1,1,1]
+		mat4.rotate @mvMatrix, @degToRad(@xRot), [1,0,0]
+		mat4.rotate @mvMatrix, @degToRad(@yRot), [0,1,0]
+		mat4.rotate @mvMatrix, @degToRad(@zRot), [0,0,1]
 
 		@gl.bindBuffer @gl.ARRAY_BUFFER, @cubeVertexPositionBuffer
 		@gl.vertexAttribPointer @shaderProgram.vertexPositionAttribute, @cubeVertexPositionBuffer.itemSize, @gl.FLOAT, false, 0, 0
 		
-		@gl.bindBuffer @gl.ARRAY_BUFFER, @cubeVertexColorBuffer
-		@gl.vertexAttribPointer @shaderProgram.vertexColorAttribute, @cubeVertexColorBuffer.itemSize, @gl.FLOAT, false, 0, 0
+		@gl.bindBuffer @gl.ARRAY_BUFFER, @cubeVertexTextureCoordBuffer
+		@gl.vertexAttribPointer @shaderProgram.textureCoordAttribute, @cubeVertexTextureCoordBuffer.itemSize, @gl.FLOAT, false, 0, 0
+
+		@gl.activeTexture @gl.TEXTURE0
+		@gl.bindTexture @gl.TEXTURE_2D, @texture
+		@gl.uniform1i @shaderProgram.samplerUniform, 0
 
 		@gl.bindBuffer @gl.ELEMENT_ARRAY_BUFFER, @cubeVertexIndexBuffer
 		@setMatrixUniforms()
 		@gl.drawElements @gl.TRIANGLES, @cubeVertexIndexBuffer.numItems, @gl.UNSIGNED_SHORT, 0
-
-		@mvPopMatrix()
 
 window.canvasRenderer = CanvasRenderer
