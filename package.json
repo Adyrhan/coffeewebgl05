@@ -1,0 +1,37 @@
+{
+  "name": "somecoffee",
+  "version": "0.0.0",
+  "main": "lib/somecoffee.js",
+  "description": "The best module ever.",
+  "homepage": "https://github.com//somecoffee",
+  "bugs": "https://github.com//somecoffee/issues",
+  "author": {
+    "name": "Adrian",
+    "email": "aperezhrd@gmail.com",
+    "url": "http://www.16bitboy.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com//somecoffee"
+  },
+  "licenses": [
+    {
+      "type": "MIT"
+    }
+  ],
+  "devDependencies": {
+    "matchdep": "~0.1.1",
+    "grunt-contrib-jshint": "~0.6.0",
+    "grunt-contrib-watch": "~0.5.0",
+    "grunt-contrib-coffee": "~0.7.0",
+    "grunt-simple-mocha": "~0.4.0",
+    "grunt-contrib-clean": "~0.5.0",
+    "grunt-express": "~1.4.0",
+    "grunt-browserify": "~2.1.4",
+    "grunt-open": "~0.2.3",
+    "sinon-chai": "~2.4.0",
+    "chai": "~1.7.2",
+    "mocha": "~1.12.1",
+    "sinon": "~1.7.3"
+  }
+}
